@@ -1,7 +1,6 @@
-import asyncio
+import os
 import logging
 import openai
-import os
 
 from telegram import Update, Bot
 from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
@@ -18,7 +17,6 @@ openai.api_key = OPENAI_API_KEY
 # Обработчик входящих сообщений
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_message = update.message.text
-
     try:
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
@@ -29,16 +27,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.exception("Ошибка OpenAI")
         await update.message.reply_text("Произошла ошибка при обращении к ИИ.")
 
-# Основная функция
-async def main():
+# Запуск
+async def post_init(app):
     bot = Bot(token=TELEGRAM_TOKEN)
-    await bot.delete_webhook()  # Удаляем Webhook, если был
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-    print("Бот запущен через polling...")
-    await app.run_polling()
+    await bot.delete_webhook()
+    print("Webhook удалён, бот работает через polling.")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    app = ApplicationBuilder().token(TELEGRAM_TOKEN).post_init(post_init).build()
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    print("Бот запущен через polling...")
+    app.run_polling()
 
