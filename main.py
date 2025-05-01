@@ -1,71 +1,44 @@
-import os
+import asyncio
 import logging
-
 import openai
-from openai.error import RateLimitError
+import os
 
-from telegram import Bot, Update
-from telegram.error import Conflict
-from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    MessageHandler,
-    ContextTypes,
-    filters,
-)
+from telegram import Update, Bot
+from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
 
-# Логи
+# Настройка логирования
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
-# Токены из ENV
+# Токены
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
 openai.api_key = OPENAI_API_KEY
 
-# 1) Сбрасываем все вебхуки и накопленные апдейты
-Bot(token=TELEGRAM_TOKEN).delete_webhook(drop_pending_updates=True)
-
-# /start
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Привет! Я ИИ-бот через polling. Напиши мне что-нибудь.")
-
-# Обработка сообщений с защитой от ошибок
+# Обработчик входящих сообщений
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_message = update.message.text
+
     try:
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": user_message}],
+            messages=[{"role": "user", "content": user_message}]
         )
-        reply = response.choices[0].message.content
-    except RateLimitError:
-        reply = "Лимит запросов к OpenAI исчерпан. Попробуйте позже."
+        await update.message.reply_text(response["choices"][0]["message"]["content"])
     except Exception as e:
-        logger.error(f"OpenAI error: {e}", exc_info=True)
-        reply = "Ошибка при обращении к OpenAI."
-    await update.message.reply_text(reply)
+        logging.exception("Ошибка OpenAI")
+        await update.message.reply_text("Произошла ошибка при обращении к ИИ.")
 
-# Глобальный обработчик остальных ошибок (игнорируем конфликт polling)
-async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
-    err = context.error
-    if isinstance(err, Conflict):
-        return
-    logger.error(f"Unhandled error: {err}", exc_info=True)
+# Основная функция
+async def main():
+    bot = Bot(token=TELEGRAM_TOKEN)
+    await bot.delete_webhook()  # Удаляем Webhook, если был
+    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    print("Бот запущен через polling...")
+    await app.run_polling()
 
 if __name__ == "__main__":
-    # 2) Строим приложение с выключением старых апдейтов
-    app = (
-        ApplicationBuilder()
-        .token(TELEGRAM_TOKEN)
-        .drop_pending_updates(True)
-        .build()
-    )
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    app.add_error_handler(error_handler)
-
-    # 3) Запускаем polling
-    app.run_polling()
-
+    asyncio.run(main())
 
